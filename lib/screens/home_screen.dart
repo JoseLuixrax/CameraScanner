@@ -96,6 +96,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   doc: docs[i],
                   onTap: () => _open(docs[i]),
                   onShare: () => _share(docs[i]),
+                  onCopyText: () => copyDocumentText(context, docs[i]),
                   onRename: () => _rename(docs[i]),
                   onDelete: () => _delete(docs[i]),
                 ),
@@ -144,13 +145,14 @@ class _EmptyHome extends StatelessWidget {
   }
 }
 
-enum _DocAction { share, rename, delete }
+enum _DocAction { share, copyText, rename, delete }
 
 class _DocumentTile extends StatelessWidget {
   const _DocumentTile({
     required this.doc,
     required this.onTap,
     required this.onShare,
+    required this.onCopyText,
     required this.onRename,
     required this.onDelete,
   });
@@ -158,6 +160,7 @@ class _DocumentTile extends StatelessWidget {
   final SavedDocument doc;
   final VoidCallback onTap;
   final VoidCallback onShare;
+  final VoidCallback onCopyText;
   final VoidCallback onRename;
   final VoidCallback onDelete;
 
@@ -205,31 +208,61 @@ class _DocumentTile extends StatelessWidget {
                       '${formatDate(doc.createdAt)}',
                       style: TextStyle(color: scheme.onSurfaceVariant),
                     ),
+                    if (doc.textPath != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.text_fields,
+                              size: 16,
+                              color: scheme.primary,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Texto seleccionable',
+                              style: TextStyle(
+                                color: scheme.primary,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                   ],
                 ),
               ),
               PopupMenuButton<_DocAction>(
                 onSelected: (a) => switch (a) {
                   _DocAction.share => onShare(),
+                  _DocAction.copyText => onCopyText(),
                   _DocAction.rename => onRename(),
                   _DocAction.delete => onDelete(),
                 },
-                itemBuilder: (_) => const [
-                  PopupMenuItem(
+                itemBuilder: (_) => [
+                  const PopupMenuItem(
                     value: _DocAction.share,
                     child: ListTile(
                       leading: Icon(Icons.share),
                       title: Text('Compartir'),
                     ),
                   ),
-                  PopupMenuItem(
+                  if (doc.textPath != null)
+                    const PopupMenuItem(
+                      value: _DocAction.copyText,
+                      child: ListTile(
+                        leading: Icon(Icons.copy_all),
+                        title: Text('Copiar texto'),
+                      ),
+                    ),
+                  const PopupMenuItem(
                     value: _DocAction.rename,
                     child: ListTile(
                       leading: Icon(Icons.edit),
                       title: Text('Renombrar'),
                     ),
                   ),
-                  PopupMenuItem(
+                  const PopupMenuItem(
                     value: _DocAction.delete,
                     child: ListTile(
                       leading: Icon(Icons.delete_outline),

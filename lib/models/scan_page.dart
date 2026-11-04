@@ -1,7 +1,19 @@
 import '../processing/enhance.dart';
 import '../processing/geometry.dart';
+import 'ocr_line.dart';
 
 enum PageStatus { processing, ready, error }
+
+/// Estado del reconocimiento de texto de la página.
+enum OcrStatus {
+  pending,
+  running,
+  done,
+
+  /// El dispositivo/plataforma no tiene motor de OCR.
+  unavailable,
+  failed,
+}
 
 /// Una página del documento que se está escaneando.
 ///
@@ -43,6 +55,10 @@ class ScanPage {
 
   PageStatus status = PageStatus.processing;
   String? error;
+
+  /// Texto reconocido sobre [outputPath] (coordenadas normalizadas).
+  List<OcrLine>? ocrLines;
+  OcrStatus ocrStatus = OcrStatus.pending;
 
   /// Se incrementa en cada edición para descartar procesados obsoletos.
   int revision = 0;

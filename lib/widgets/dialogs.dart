@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
+import '../services/document_repository.dart';
 import '../services/pdf_service.dart';
 
 enum CaptureSource { camera, gallery }
@@ -79,57 +81,72 @@ class _SourceCard extends StatelessWidget {
 }
 
 class ExportOptions {
-  const ExportOptions(this.name, this.pageSize);
+  const ExportOptions(this.name, this.pageSize, {this.ocr = true});
 
   final String name;
   final PdfPageSize pageSize;
+
+  /// Añadir capa de texto (OCR) para poder buscar y copiar el texto.
+  final bool ocr;
 }
 
-/// Diálogo con nombre del PDF y tamaño de página.
+/// Diálogo con nombre del PDF, tamaño de página y OCR.
 Future<ExportOptions?> showExportDialog(
   BuildContext context, {
   required String defaultName,
   PdfPageSize initialSize = PdfPageSize.a4,
+  bool initialOcr = true,
 }) {
   final controller = TextEditingController(text: defaultName);
   var size = initialSize;
+  var ocr = initialOcr;
   return showDialog<ExportOptions>(
     context: context,
     builder: (context) => StatefulBuilder(
       builder: (context, setState) => AlertDialog(
         title: const Text('Guardar PDF'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            TextField(
-              controller: controller,
-              autofocus: true,
-              decoration: const InputDecoration(
-                labelText: 'Nombre',
-                border: OutlineInputBorder(),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                controller: controller,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  labelText: 'Nombre',
+                  border: OutlineInputBorder(),
+                ),
               ),
-            ),
-            const SizedBox(height: 16),
-            const Text('Tamaño de página'),
-            const SizedBox(height: 8),
-            SegmentedButton<PdfPageSize>(
-              segments: [
-                for (final s in PdfPageSize.values)
-                  ButtonSegment(value: s, label: Text(s.label)),
-              ],
-              selected: {size},
-              onSelectionChanged: (v) => setState(() => size = v.first),
-              showSelectedIcon: false,
-            ),
-            if (size == PdfPageSize.fit) ...[
+              const SizedBox(height: 16),
+              const Text('Tamaño de página'),
               const SizedBox(height: 8),
-              Text(
-                'Cada página toma la forma del documento escaneado.',
-                style: Theme.of(context).textTheme.bodySmall,
+              SegmentedButton<PdfPageSize>(
+                segments: [
+                  for (final s in PdfPageSize.values)
+                    ButtonSegment(value: s, label: Text(s.label)),
+                ],
+                selected: {size},
+                onSelectionChanged: (v) => setState(() => size = v.first),
+                showSelectedIcon: false,
+              ),
+              if (size == PdfPageSize.fit) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Cada página toma la forma del documento escaneado.',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+              const SizedBox(height: 8),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: ocr,
+                onChanged: (v) => setState(() => ocr = v),
+                title: const Text('Texto seleccionable (OCR)'),
+                subtitle: const Text('Permite buscar y copiar el texto'),
               ),
             ],
-          ],
+          ),
         ),
         actions: [
           TextButton(
@@ -141,7 +158,11 @@ Future<ExportOptions?> showExportDialog(
               final name = controller.text.trim();
               Navigator.pop(
                 context,
-                ExportOptions(name.isEmpty ? defaultName : name, size),
+                ExportOptions(
+                  name.isEmpty ? defaultName : name,
+                  size,
+                  ocr: ocr,
+                ),
               );
             },
             child: const Text('Guardar'),
@@ -217,4 +238,21 @@ String formatBytes(int bytes) {
 String formatDate(DateTime d) {
   String two(int v) => v.toString().padLeft(2, '0');
   return '${two(d.day)}/${two(d.month)}/${d.year} ${two(d.hour)}:${two(d.minute)}';
+}
+
+/// Copia al portapapeles el texto reconocido (OCR) de [doc].
+Future<void> copyDocumentText(BuildContext context, SavedDocument doc) async {
+  final text = await DocumentRepository.instance.readText(doc);
+  if (!context.mounted) return;
+  final messenger = ScaffoldMessenger.of(context)..hideCurrentSnackBar();
+  if (text.isEmpty) {
+    messenger.showSnackBar(
+      const SnackBar(content: Text('Este documento no tiene texto reconocido')),
+    );
+    return;
+  }
+  await Clipboard.setData(ClipboardData(text: text));
+  messenger.showSnackBar(
+    SnackBar(content: Text('Texto copiado (${text.length} caracteres)')),
+  );
 }

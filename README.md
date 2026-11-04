@@ -8,9 +8,13 @@ al estilo CamScanner:
 - 📐 **Corrección de perspectiva** con la relación de aspecto real del papel (A4, tickets…).
 - ✨ **Mejora de legibilidad**: elimina sombras, blanquea el papel y realza el texto.
   Filtros: *Original*, *Mejorado* (color), *Grises* y *B/N*.
+- 🔎 **OCR: texto seleccionable y buscable** en el PDF (capa de texto invisible sobre la
+  imagen, como los escáneres profesionales). También se puede copiar todo el texto desde la app.
 - 📄 Documentos de varias páginas (reordenar, editar, borrar) → PDF en A4, Carta o *Auto*.
-- 📂 Lista de PDFs guardados: abrir, compartir (WhatsApp, correo, Drive…), imprimir, renombrar y borrar.
-- 🔒 Todo se procesa **en el propio móvil**: sin servidores, sin conexión y sin Google Play Services.
+- 📂 Lista de PDFs guardados: abrir, compartir (WhatsApp, correo, Drive…), imprimir, renombrar,
+  copiar texto y borrar.
+- 🔒 Todo se procesa **en el propio móvil**: sin servidores, sin conexión y sin Google Play Services
+  (el modelo de OCR de ML Kit va empaquetado en la app).
 
 | Inicio | Recorte | Filtros | Páginas | Guardar | Documentos |
 |---|---|---|---|---|---|
@@ -58,6 +62,8 @@ flutter run --release            # con el iPhone conectado
 ```
 
 Los textos de permisos de cámara y fotos ya están en `ios/Runner/Info.plist`.
+Requiere **iOS 15.5 o superior** (lo exige ML Kit para el OCR; ya configurado en
+`ios/Podfile` y en el proyecto de Xcode).
 
 ## 3. Uso
 
@@ -67,7 +73,13 @@ Los textos de permisos de cámara y fotos ya están en `ios/Runner/Info.plist`.
 3. **Mejorar**: elige filtro (por defecto *Mejorado*) y gira si hace falta. Pellizca para hacer zoom.
 4. Añade más páginas con los iconos de cámara/galería de arriba. Mantén pulsada una página
    para reordenarla; tócala para volver a recortarla o cambiar el filtro.
-5. **Guardar PDF** → nombre y tamaño de página → se abre el visor con *Compartir* e *Imprimir*.
+5. **Guardar PDF** → nombre, tamaño de página y *Texto seleccionable (OCR)* → se abre el visor
+   con *Copiar texto*, *Compartir* e *Imprimir*.
+
+El texto de cada página se reconoce en segundo plano en cuanto la página está lista (verás
+"Mejorado · 24 líneas de texto"), así que guardar el PDF es casi instantáneo. El texto se
+puede seleccionar y buscar al abrir el PDF en cualquier visor (Adobe, Chrome, Drive, Archivos
+de iOS…) y copiar entero desde la app con **Copiar texto** (menú ⋮ de cada documento o en el visor).
 
 Si eliges **varias imágenes** de la galería, se recortan y mejoran automáticamente en
 lote; después puedes retocar cualquier página.
@@ -126,6 +138,19 @@ El tamaño de salida usa el **modelo de cámara pinhole** (Zhang & He, *Whiteboa
 and image enhancement*) para recuperar la proporción real del papel: un A4 fotografiado
 en ángulo sale con proporción 1:1,414 y no "estirado".
 
+### OCR y PDF con texto — `ocr_service.dart` + `pdf_service.dart`
+
+- **Google ML Kit Text Recognition** (alfabeto latino: español, francés, alemán, italiano,
+  portugués, inglés…) en el dispositivo, sobre la imagen final ya recortada y mejorada.
+  En Android se usa el modelo empaquetado (`com.google.mlkit:text-recognition`), no el de
+  Play Services.
+- Cada línea reconocida se escribe en el PDF con **modo de render invisible** (`3 Tr`) y
+  escalada para ocupar exactamente su caja sobre la imagen: al seleccionar, el resaltado
+  coincide con el texto que se ve.
+- Fuente Helvetica estándar (no se incrusta, 0 bytes extra) con WinAnsiEncoding:
+  á é í ó ú ñ ü ç ß œ € “ ” – … se copian correctamente.
+- Se guarda además un `.txt` con el texto (para *Copiar texto*).
+
 ### Mejora de legibilidad — `enhance.dart`
 
 - **Estimación del fondo** (iluminación del papel): máximo por bloques (elimina el texto),
@@ -141,6 +166,7 @@ en ángulo sale con proporción 1:1,414 y no "estirado".
 ```
 lib/
   main.dart                     tema y arranque
+  models/                       ScanPage (página en edición), OcrLine (línea de texto)
   processing/                   motor (Dart puro, testeable sin móvil)
     geometry.dart               puntos, cuadriláteros, envolvente convexa, rectas
     image_ops.dart              RgbImage, redimensionado, blur, morfología, Otsu
@@ -151,11 +177,12 @@ lib/
     pipeline.dart               funciones de alto nivel para isolates
   services/
     image_service.dart          cámara/galería (image_picker) + isolates
-    pdf_service.dart            generación del PDF (paquete pdf)
+    ocr_service.dart            OCR en el dispositivo (Google ML Kit)
+    pdf_service.dart            generación del PDF + capa de texto invisible
     document_repository.dart    PDFs guardados (almacenamiento interno de la app)
   screens/                      inicio, sesión de escaneo, recorte, filtros, visor PDF
   widgets/                      editor de esquinas con lupa, diálogos
-test/                           34 tests (geometría, perspectiva, detector, filtros, PDF, editor)
+test/                           43 tests (geometría, perspectiva, detector, filtros, OCR, PDF, editor)
 tool/scan_cli.dart              prueba el motor sobre una foto desde la terminal
 tool/screenshots/               genera las capturas de docs/screenshots
 docs/samples/                   fotos de ejemplo
@@ -179,7 +206,6 @@ dart run flutter_launcher_icons
 
 ## 8. Ideas para siguientes versiones
 
-- **OCR** con `google_mlkit_text_recognition` para PDFs con texto seleccionable/buscable.
 - **Detección en vivo** en el visor de cámara (paquete `camera` + el detector actual a ~10 fps)
   con disparo automático cuando el documento está estable.
 - Guardar directamente en una carpeta (Drive / Descargas) o enviarlo a n8n/Odoo por webhook

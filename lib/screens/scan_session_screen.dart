@@ -3,12 +3,14 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import '../models/ocr_line.dart';
 import '../models/scan_page.dart';
 import '../processing/enhance.dart';
 import '../processing/geometry.dart';
 import '../processing/pipeline.dart';
 import '../services/document_repository.dart';
 import '../services/image_service.dart';
+import '../services/ocr_service.dart';
 import '../services/pdf_service.dart';
 import '../widgets/dialogs.dart';
 import 'crop_screen.dart';
@@ -41,6 +43,10 @@ class _ScanSessionScreenState extends State<ScanSessionScreen> {
 
   /// Cola de renderizado: una página cada vez (limita el uso de memoria).
   Future<void> _renderQueue = Future.value();
+
+  /// Cola de OCR (ML Kit trabaja en nativo; se reconoce una página cada vez).
+  Future<void> _ocrQueue = Future.value();
+  bool _ocrEnabled = true;
   String? _busyMessage;
   bool _saving = false;
   int _uid = 0;
@@ -59,8 +65,8 @@ class _ScanSessionScreenState extends State<ScanSessionScreen> {
   void dispose() {
     final dir = _workDir;
     if (dir != null) {
-      // Se espera a que terminen los renderizados pendientes antes de borrar.
-      _renderQueue.whenComplete(() {
+      // Se espera a que terminen los trabajos pendientes antes de borrar.
+      Future.wait([_renderQueue, _ocrQueue]).whenComplete(() {
         if (dir.existsSync()) dir.deleteSync(recursive: true);
       });
     }
@@ -237,11 +243,48 @@ class _ScanSessionScreenState extends State<ScanSessionScreen> {
         ..status = PageStatus.ready
         ..error = null;
       if (old != null && old != r.path) _deleteQuietly(old);
+      _enqueueOcr(page, revision);
     } catch (e) {
       page
         ..status = PageStatus.error
         ..error = '$e';
     }
+    if (mounted) setState(() {});
+  }
+
+  // -------------------------------------------------------------------------
+  // OCR en segundo plano (sobre la imagen final de cada página)
+  // -------------------------------------------------------------------------
+
+  void _enqueueOcr(ScanPage page, int revision) {
+    page
+      ..ocrLines = null
+      ..ocrStatus = OcrStatus.running;
+    _ocrQueue = _ocrQueue.then((_) => _runOcr(page, revision));
+  }
+
+  Future<void> _runOcr(ScanPage page, int revision) async {
+    final path = page.outputPath;
+    if (!_pages.contains(page) || page.revision != revision || path == null) {
+      return;
+    }
+    List<OcrLine>? lines;
+    var status = OcrStatus.done;
+    try {
+      lines = await OcrService.recognize(
+        path,
+        page.outputWidth,
+        page.outputHeight,
+      );
+      if (lines == null) status = OcrStatus.unavailable;
+    } catch (e) {
+      status = OcrStatus.failed;
+    }
+    // La página se ha vuelto a editar mientras tanto: resultado obsoleto.
+    if (page.revision != revision) return;
+    page
+      ..ocrLines = lines
+      ..ocrStatus = status;
     if (mounted) setState(() {});
   }
 
@@ -271,9 +314,11 @@ class _ScanSessionScreenState extends State<ScanSessionScreen> {
           'Escaneo ${now.year}-${two(now.month)}-${two(now.day)} '
           '${two(now.hour)}.${two(now.minute)}',
       initialSize: _pageSize,
+      initialOcr: _ocrEnabled,
     );
     if (options == null || !mounted) return;
     _pageSize = options.pageSize;
+    _ocrEnabled = options.ocr;
     setState(() {
       _saving = true;
       _busyMessage = 'Terminando páginas…';
@@ -284,11 +329,34 @@ class _ScanSessionScreenState extends State<ScanSessionScreen> {
       if (failed > 0) {
         throw StateError('$failed página(s) no se pudieron procesar');
       }
+      if (options.ocr) {
+        if (mounted) setState(() => _busyMessage = 'Reconociendo texto…');
+        await _ocrQueue;
+        if (_pages.any((p) => p.ocrStatus == OcrStatus.unavailable)) {
+          _snack(
+            'El reconocimiento de texto no está disponible en este '
+            'dispositivo: el PDF se guardará sin texto seleccionable.',
+          );
+        } else if (_pages.any((p) => p.ocrStatus == OcrStatus.failed)) {
+          _snack('No se pudo leer el texto de alguna página.');
+        }
+      }
       if (mounted) setState(() => _busyMessage = 'Generando PDF…');
       final inputs = [
         for (final p in _pages)
-          PdfPageInput(p.outputPath!, p.outputWidth, p.outputHeight),
+          PdfPageInput(
+            p.outputPath!,
+            p.outputWidth,
+            p.outputHeight,
+            lines: options.ocr ? (p.ocrLines ?? const []) : const [],
+          ),
       ];
+      final text = options.ocr
+          ? _pages
+                .map((p) => ocrPlainText(p.ocrLines ?? const []))
+                .where((t) => t.isNotEmpty)
+                .join('\n\n')
+          : '';
       final bytes = await PdfService.build(
         inputs,
         pageSize: options.pageSize,
@@ -300,6 +368,7 @@ class _ScanSessionScreenState extends State<ScanSessionScreen> {
         pdfBytes: bytes,
         pages: _pages.length,
         thumbnail: thumb,
+        text: text.isEmpty ? null : text,
       );
       if (!mounted) return;
       // Sustituye la sesión por el visor del PDF recién creado.
@@ -501,7 +570,14 @@ class _PageCard extends StatelessWidget {
     }
     final status = switch (page.status) {
       PageStatus.processing => 'Procesando…',
-      PageStatus.ready => page.filter.label,
+      PageStatus.ready => switch (page.ocrStatus) {
+        OcrStatus.running ||
+        OcrStatus.pending => '${page.filter.label} · leyendo texto…',
+        OcrStatus.done when (page.ocrLines?.isNotEmpty ?? false) =>
+          '${page.filter.label} · ${page.ocrLines!.length} líneas de texto',
+        OcrStatus.done => '${page.filter.label} · sin texto',
+        OcrStatus.unavailable || OcrStatus.failed => page.filter.label,
+      },
       PageStatus.error => 'Error: ${page.error}',
     };
     return Card(

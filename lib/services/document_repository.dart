@@ -14,6 +14,7 @@ class SavedDocument {
     required this.pdfPath,
     required this.thumbPath,
     required this.sizeBytes,
+    this.textPath,
   });
 
   final String id;
@@ -24,6 +25,9 @@ class SavedDocument {
   final String? thumbPath;
   final int sizeBytes;
 
+  /// Texto reconocido (OCR) en un .txt junto al PDF, si lo hay.
+  final String? textPath;
+
   /// Nombre de archivo seguro para compartir.
   String get fileName {
     final safe = name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_').trim();
@@ -32,8 +36,8 @@ class SavedDocument {
 }
 
 /// Guarda los PDF en `<documentos de la app>/scans/` con una ficha JSON y una
-/// miniatura por documento: `scans/<id>.pdf`, `scans/<id>.json` y
-/// `scans/<id>.jpg`.
+/// miniatura por documento: `scans/<id>.pdf`, `scans/<id>.json`,
+/// `scans/<id>.jpg` y, si hay OCR, `scans/<id>.txt`.
 class DocumentRepository {
   DocumentRepository._();
 
@@ -69,6 +73,7 @@ class DocumentRepository {
         final pdf = File('${dir.path}/$id.pdf');
         if (!pdf.existsSync()) continue;
         final thumb = File('${dir.path}/$id.jpg');
+        final text = File('${dir.path}/$id.txt');
         docs.add(
           SavedDocument(
             id: id,
@@ -78,6 +83,7 @@ class DocumentRepository {
             pdfPath: pdf.path,
             thumbPath: thumb.existsSync() ? thumb.path : null,
             sizeBytes: pdf.lengthSync(),
+            textPath: text.existsSync() ? text.path : null,
           ),
         );
       } catch (_) {
@@ -93,6 +99,7 @@ class DocumentRepository {
     required Uint8List pdfBytes,
     required int pages,
     Uint8List? thumbnail,
+    String? text,
   }) async {
     final dir = await _dir();
     final now = DateTime.now();
@@ -103,6 +110,11 @@ class DocumentRepository {
     if (thumbnail != null) {
       thumbPath = '${dir.path}/$id.jpg';
       await File(thumbPath).writeAsBytes(thumbnail);
+    }
+    String? textPath;
+    if (text != null && text.isNotEmpty) {
+      textPath = '${dir.path}/$id.txt';
+      await File(textPath).writeAsString(text);
     }
     await File('${dir.path}/$id.json').writeAsString(
       jsonEncode({
@@ -120,6 +132,7 @@ class DocumentRepository {
       pdfPath: pdf.path,
       thumbPath: thumbPath,
       sizeBytes: pdfBytes.length,
+      textPath: textPath,
     );
   }
 
@@ -132,9 +145,17 @@ class DocumentRepository {
     doc.name = newName;
   }
 
+  /// Texto reconocido del documento ('' si no tiene).
+  Future<String> readText(SavedDocument doc) async {
+    final path = doc.textPath;
+    if (path == null) return '';
+    final f = File(path);
+    return f.existsSync() ? f.readAsString() : '';
+  }
+
   Future<void> delete(SavedDocument doc) async {
     final dir = await _dir();
-    for (final ext in const ['pdf', 'json', 'jpg']) {
+    for (final ext in const ['pdf', 'json', 'jpg', 'txt']) {
       final f = File('${dir.path}/${doc.id}.$ext');
       if (f.existsSync()) await f.delete();
     }

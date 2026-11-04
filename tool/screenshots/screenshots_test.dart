@@ -8,6 +8,7 @@
 import 'dart:io';
 
 import 'package:camera_scanner/main.dart';
+import 'package:camera_scanner/models/ocr_line.dart';
 import 'package:camera_scanner/models/scan_page.dart';
 import 'package:camera_scanner/processing/enhance.dart';
 import 'package:camera_scanner/processing/pipeline.dart';
@@ -74,6 +75,18 @@ Future<void> _shot(WidgetTester tester, String name, {bool last = true}) async {
   if (last) debugDisableShadows = true;
 }
 
+/// Líneas OCR de ejemplo (en la app las genera ML Kit en el dispositivo).
+List<OcrLine> _fakeOcr(int n) => [
+  for (var i = 0; i < n; i++)
+    OcrLine(
+      text: i == 0 ? 'FACTURA Nº 2026-1104' : 'Línea de texto $i',
+      left: 0.08,
+      top: 0.05 + i * 0.03,
+      width: 0.6,
+      height: 0.02,
+    ),
+];
+
 void main() {
   late Directory tmp;
   final pages = <ScanPage>[];
@@ -127,7 +140,9 @@ void main() {
           ..outputPath = r.path
           ..outputWidth = r.width
           ..outputHeight = r.height
-          ..status = PageStatus.ready,
+          ..status = PageStatus.ready
+          ..ocrStatus = OcrStatus.done
+          ..ocrLines = _fakeOcr(18 + i * 7),
       );
     }
   });
@@ -256,6 +271,7 @@ void main() {
           pdfBytes: pdf,
           pages: i + 1,
           thumbnail: Uint8List.fromList(thumb),
+          text: i == 1 ? null : ocrPlainText(p.ocrLines!),
         );
         await Future<void>.delayed(const Duration(milliseconds: 5));
       }

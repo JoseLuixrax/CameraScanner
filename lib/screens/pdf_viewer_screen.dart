@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:printing/printing.dart';
 
 import '../services/document_repository.dart';
+import '../widgets/dialogs.dart';
 
 /// Visor del PDF con acciones de compartir e imprimir.
 class PdfViewerScreen extends StatefulWidget {
@@ -31,6 +32,12 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
       appBar: AppBar(
         title: Text(widget.document.name, overflow: TextOverflow.ellipsis),
         actions: [
+          if (widget.document.textPath != null)
+            IconButton(
+              tooltip: 'Copiar texto',
+              onPressed: () => copyDocumentText(context, widget.document),
+              icon: const Icon(Icons.copy_all),
+            ),
           IconButton(
             tooltip: 'Compartir',
             onPressed: _share,
