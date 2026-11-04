@@ -3,7 +3,9 @@
 App móvil (Android e iOS, Flutter) para **convertir fotos de documentos en PDF**,
 al estilo CamScanner:
 
-- 📷 Foto con la cámara o una o varias imágenes de la **galería**.
+- 📷 **Cámara con detección en vivo**: el contorno del documento se dibuja sobre la vista
+  previa y la foto se dispara sola cuando está quieto. Modo **lote** para escanear varias
+  páginas seguidas, flash/linterna y enfoque tocando la pantalla. También desde la **galería**.
 - ✂️ **Detección automática de bordes** y recorte, con ajuste manual de esquinas (lupa de precisión).
 - 📐 **Corrección de perspectiva** con la relación de aspecto real del papel (A4, tickets…).
 - ✨ **Mejora de legibilidad**: elimina sombras, blanquea el papel y realza el texto.
@@ -11,14 +13,20 @@ al estilo CamScanner:
 - 🔎 **OCR: texto seleccionable y buscable** en el PDF (capa de texto invisible sobre la
   imagen, como los escáneres profesionales). También se puede copiar todo el texto desde la app.
 - 📄 Documentos de varias páginas (reordenar, editar, borrar) → PDF en A4, Carta o *Auto*.
-- 📂 Lista de PDFs guardados: abrir, compartir (WhatsApp, correo, Drive…), imprimir, renombrar,
-  copiar texto y borrar.
+- 💾 **Guardar en el dispositivo eligiendo carpeta y nombre** (Descargas, Documentos, tarjeta SD,
+  Google Drive, iCloud…) con el selector del sistema, sin pedir permisos de almacenamiento.
+  Calidad del PDF configurable (*Alta*, *Media*, *Baja*) para controlar el tamaño.
+- 📂 Lista de PDFs guardados: abrir, compartir (WhatsApp, correo, Drive…), imprimir, guardar en
+  una carpeta, renombrar, copiar texto y borrar. Las opciones elegidas se recuerdan.
 - 🔒 Todo se procesa **en el propio móvil**: sin servidores, sin conexión y sin Google Play Services
   (el modelo de OCR de ML Kit va empaquetado en la app).
 
-| Inicio | Recorte | Filtros | Páginas | Guardar | Documentos |
+| Cámara en vivo* | Recorte | Filtros | Páginas | Guardar | Documentos |
 |---|---|---|---|---|---|
-| ![](docs/screenshots/01_inicio_vacio.png) | ![](docs/screenshots/03_recorte.png) | ![](docs/screenshots/04_filtros.png) | ![](docs/screenshots/05_paginas.png) | ![](docs/screenshots/06_guardar_pdf.png) | ![](docs/screenshots/07_inicio_documentos.png) |
+| ![](docs/screenshots/03_camara.png) | ![](docs/screenshots/04_recorte.png) | ![](docs/screenshots/05_filtros.png) | ![](docs/screenshots/06_paginas.png) | ![](docs/screenshots/07_guardar_pdf.png) | ![](docs/screenshots/08_inicio_documentos.png) |
+
+\* Captura generada sin dispositivo: la vista previa es una foto fija de ejemplo, pero el
+contorno y los controles son los reales de la app (mismo detector).
 
 ---
 
@@ -85,13 +93,25 @@ Requiere **iOS 15.5 o superior** (lo exige ML Kit para el OCR; ya configurado en
 ## 3. Uso
 
 1. **Escanear** → *Cámara* o *Galería*.
+   - En la cámara, apunta al documento: el contorno aparece en blanco y se vuelve verde
+     cuando está quieto. Con **Auto** activado la foto se hace sola (el anillo del disparador
+     indica cuánto falta); si no, pulsa el disparador.
+   - **Lote**: la cámara no se cierra tras cada foto; cambia de hoja y se dispara otra vez.
+     Pulsa la miniatura (**Listo**) al terminar: las páginas se recortan y mejoran solas.
+   - Icono de rayo: flash apagado / automático / linterna. Toca la imagen para enfocar.
 2. **Ajustar bordes**: arrastra las esquinas (aparece una lupa) o el punto medio de un
    lado para moverlo entero. *Auto* vuelve a la detección automática, *Toda* usa la foto completa.
 3. **Mejorar**: elige filtro (por defecto *Mejorado*) y gira si hace falta. Pellizca para hacer zoom.
 4. Añade más páginas con los iconos de cámara/galería de arriba. Mantén pulsada una página
    para reordenarla; tócala para volver a recortarla o cambiar el filtro.
-5. **Guardar PDF** → nombre, tamaño de página y *Texto seleccionable (OCR)* → se abre el visor
-   con *Copiar texto*, *Compartir* e *Imprimir*.
+5. **Guardar PDF** → nombre, tamaño de página, calidad, *Texto seleccionable (OCR)* y
+   *Guardar también en el dispositivo* → se abre el visor con *Guardar en el dispositivo*,
+   *Copiar texto*, *Compartir* e *Imprimir*.
+
+**Guardar en el dispositivo** abre el selector de archivos del sistema: eliges la carpeta
+(Descargas, Documentos, una subcarpeta nueva, la tarjeta SD, Google Drive, iCloud Drive…) y el
+nombre del archivo. El sistema recuerda la última carpeta usada. Los PDF siguen estando
+también en la lista de la app.
 
 El texto de cada página se reconoce en segundo plano en cuanto la página está lista (verás
 "Mejorado · 24 líneas de texto"), así que guardar el PDF es casi instantáneo. El texto se
@@ -148,6 +168,20 @@ foto ─► decodificar (EXIF, máx. 3000 px) ─► detectar documento ─► [
 4. Refina los mejores ajustando cada lado por mínimos cuadrados (precisión sub-píxel).
 5. Si una esquina queda fuera de la foto, la desliza por su lado hasta el borde.
 
+### Cámara en vivo — `camera_screen.dart`
+
+- Paquete oficial `camera`. La foto se hace a la **resolución máxima** del sensor.
+- Cada frame se reduce a ~360 px leyendo sólo 1 de cada N píxeles directamente del YUV/BGRA
+  (unos ms aunque el frame sea de 12 MP), se gira según la orientación del sensor y se
+  analiza en un isolate con el detector en **modo rápido** (~60–75 ms en un PC; en un móvil
+  de gama media ~3–6 detecciones por segundo).
+- `DocumentTracker` suaviza el contorno entre frames y cuenta las detecciones "quietas";
+  tras disparar no repite hasta que la hoja cambia (modo lote).
+- En Android el stream es continuo (CameraX limita sola su resolución); en iOS los frames
+  se piden de uno en uno para no copiar imágenes de 12 MP a 30 fps.
+- Tras la foto se vuelve a detectar a resolución completa (más preciso) y se pasa al recorte.
+- Si la cámara integrada falla, se ofrece la cámara del sistema (sin detección en vivo).
+
 ### Perspectiva — `perspective.dart`
 
 Homografía de 4 puntos + interpolación bilineal (con reducción previa anti-aliasing).
@@ -192,14 +226,18 @@ lib/
     enhance.dart                filtros de mejora
     codec.dart                  JPEG/PNG/WebP… ↔ RgbImage (paquete image)
     pipeline.dart               funciones de alto nivel para isolates
+    frame_converter.dart        frames de cámara (YUV420/NV21/BGRA) → imagen reducida
+    document_tracker.dart       suavizado y estabilidad para el disparo automático
   services/
-    image_service.dart          cámara/galería (image_picker) + isolates
+    image_service.dart          galería / cámara del sistema (image_picker) + isolates
+    device_saver.dart           guardar en carpeta del dispositivo (selector del sistema)
+    app_prefs.dart              preferencias recordadas (shared_preferences)
     ocr_service.dart            OCR en el dispositivo (Google ML Kit)
     pdf_service.dart            generación del PDF + capa de texto invisible
     document_repository.dart    PDFs guardados (almacenamiento interno de la app)
-  screens/                      inicio, sesión de escaneo, recorte, filtros, visor PDF
+  screens/                      inicio, cámara en vivo, sesión, recorte, filtros, visor PDF
   widgets/                      editor de esquinas con lupa, diálogos
-test/                           43 tests (geometría, perspectiva, detector, filtros, OCR, PDF, editor)
+test/                           59 tests (geometría, perspectiva, detector, cámara, filtros, OCR, PDF…)
 tool/scan_cli.dart              prueba el motor sobre una foto desde la terminal
 tool/screenshots/               genera las capturas de docs/screenshots
 docs/samples/                   fotos de ejemplo
@@ -223,8 +261,5 @@ dart run flutter_launcher_icons
 
 ## 8. Ideas para siguientes versiones
 
-- **Detección en vivo** en el visor de cámara (paquete `camera` + el detector actual a ~10 fps)
-  con disparo automático cuando el documento está estable.
-- Guardar directamente en una carpeta (Drive / Descargas) o enviarlo a n8n/Odoo por webhook
-  (p. ej. facturas de proveedor → contabilidad).
-- Compresión configurable (calidad JPEG / ppp) y PDF protegido con contraseña.
+- Enviar el PDF a n8n/Odoo por webhook (p. ej. facturas de proveedor → contabilidad).
+- PDF protegido con contraseña.

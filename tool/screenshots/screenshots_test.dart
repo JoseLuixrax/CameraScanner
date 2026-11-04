@@ -12,6 +12,7 @@ import 'package:camera_scanner/models/ocr_line.dart';
 import 'package:camera_scanner/models/scan_page.dart';
 import 'package:camera_scanner/processing/enhance.dart';
 import 'package:camera_scanner/processing/pipeline.dart';
+import 'package:camera_scanner/screens/camera_screen.dart';
 import 'package:camera_scanner/screens/crop_screen.dart';
 import 'package:camera_scanner/screens/filter_screen.dart';
 import 'package:camera_scanner/screens/scan_session_screen.dart';
@@ -177,6 +178,19 @@ void main() {
     await _shot(tester, '02_elegir_origen');
   });
 
+  testWidgets('03 cámara con detección en vivo', (tester) async {
+    await phone(tester);
+    await tester.pumpWidget(
+      const ScannerApp(
+        home: CameraScreen(
+          debugPreviewImage: 'docs/samples/factura_sombra.jpg',
+        ),
+      ),
+    );
+    await _settle(tester, ms: 400);
+    await _shot(tester, '03_camara');
+  });
+
   testWidgets('03 recorte', (tester) async {
     await phone(tester);
     final s = sources[0];
@@ -217,7 +231,7 @@ void main() {
     final g = await tester.startGesture(br);
     await g.moveBy(const Offset(-2, -3));
     await tester.pump();
-    await _shot(tester, '03_recorte');
+    await _shot(tester, '04_recorte');
     await g.up();
   });
 
@@ -235,7 +249,7 @@ void main() {
       ),
     );
     await _settle(tester, ms: 1500);
-    await _shot(tester, '04_filtros');
+    await _shot(tester, '05_filtros');
   });
 
   testWidgets('05 documento con páginas', (tester) async {
@@ -244,10 +258,10 @@ void main() {
       ScannerApp(home: ScanSessionScreen(debugPages: pages)),
     );
     await _settle(tester);
-    await _shot(tester, '05_paginas', last: false);
+    await _shot(tester, '06_paginas', last: false);
     await tester.tap(find.text('Guardar PDF'));
     await tester.pumpAndSettle();
-    await _shot(tester, '06_guardar_pdf');
+    await _shot(tester, '07_guardar_pdf');
   });
 
   testWidgets('07 inicio con documentos', (tester) async {
@@ -278,6 +292,6 @@ void main() {
     });
     await tester.pumpWidget(const ScannerApp());
     await _settle(tester, cycles: 16);
-    await _shot(tester, '07_inicio_documentos');
+    await _shot(tester, '08_inicio_documentos');
   });
 }

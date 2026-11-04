@@ -37,7 +37,16 @@ class DetectionResult {
 ///  4. Refina los mejores ajustando cada lado por mínimos cuadrados a los
 ///     píxeles de borde cercanos (precisión sub-píxel) y se queda con el mejor.
 class DocumentDetector {
-  const DocumentDetector({this.workSize = 512, this.minConfidence = 0.45});
+  const DocumentDetector({
+    this.workSize = 512,
+    this.minConfidence = 0.45,
+    this.fast = false,
+  });
+
+  /// Modo rápido para la vista de cámara en vivo: menos candidatos (un nivel
+  /// de Canny menos, menos rectas de Hough, sin segmentación oscura). Unas
+  /// 2x más rápido; para la foto final se usa el modo completo.
+  final bool fast;
 
   /// Lado mayor de la imagen de trabajo.
   final int workSize;
@@ -52,7 +61,7 @@ class DocumentDetector {
     final sx = small.width / image.width;
     final sy = small.height / image.height;
 
-    final analysis = _EdgeAnalysis(small);
+    final analysis = _EdgeAnalysis(small, fast: fast);
     final best = analysis.findDocument();
     if (best == null || best.score < minConfidence) return null;
 
@@ -86,7 +95,7 @@ class _HoughLine {
 }
 
 class _EdgeAnalysis {
-  _EdgeAnalysis(RgbImage img)
+  _EdgeAnalysis(RgbImage img, {this.fast = false})
     : w = img.width,
       h = img.height,
       n = img.width * img.height {
@@ -96,6 +105,7 @@ class _EdgeAnalysis {
   final int w;
   final int h;
   final int n;
+  final bool fast;
 
   late final Float32List gx;
   late final Float32List gy;
@@ -175,7 +185,7 @@ class _EdgeAnalysis {
     final levels = <double>{
       edgeThr * 1.5,
       edgeThr * 3,
-      math.max(edgeThr * 3, strong * 0.6),
+      if (!fast) math.max(edgeThr * 3, strong * 0.6),
     }.toList();
 
     Uint8List? houghEdges;
@@ -183,7 +193,7 @@ class _EdgeAnalysis {
       final high = levels[li];
       final edges = _hysteresis(nms, math.max(edgeThr, high * 0.4), high);
       if (li == 0) houghEdges = edges;
-      for (final r in const [1, 2]) {
+      for (final r in fast ? const [1] : const [1, 2]) {
         final dil = dilateMask(edges, w, h, r);
         for (final q in _componentQuads(dil, eight: true)) {
           addQuad(q);
@@ -200,7 +210,7 @@ class _EdgeAnalysis {
 
     // Segmentación por brillo (papel claro sobre fondo oscuro y viceversa).
     final t = otsuThreshold(lum);
-    for (final bright in const [true, false]) {
+    for (final bright in fast ? const [true] : const [true, false]) {
       final mask = Uint8List(n);
       for (var i = 0; i < n; i++) {
         mask[i] = (bright ? lum[i] > t : lum[i] <= t) ? 1 : 0;
@@ -217,7 +227,7 @@ class _EdgeAnalysis {
     // Refina los mejores y vuelve a puntuar.
     _Candidate? best;
     final seen = <Quad>[];
-    for (final c in candidates.take(12)) {
+    for (final c in candidates.take(fast ? 6 : 12)) {
       if (seen.any((s) => _quadDistance(s, c.quad) < 3)) continue;
       seen.add(c.quad);
       var cur = c;
@@ -229,7 +239,7 @@ class _EdgeAnalysis {
         cur = rc;
       }
       if (best == null || cur.score > best.score) best = cur;
-      if (seen.length >= 6) break;
+      if (seen.length >= (fast ? 3 : 6)) break;
     }
     return best;
   }
@@ -454,6 +464,7 @@ class _EdgeAnalysis {
     }
     peaks.sort((a, b) => b.votes.compareTo(a.votes));
 
+    final maxLines = fast ? 6 : 8;
     final horiz = <_HoughLine>[];
     final vert = <_HoughLine>[];
     bool similar(_HoughLine a, _HoughLine b) {
@@ -469,10 +480,10 @@ class _EdgeAnalysis {
     for (final p in peaks) {
       final isHoriz = p.theta >= 45 && p.theta < 135;
       final list = isHoriz ? horiz : vert;
-      if (list.length >= 8) continue;
+      if (list.length >= maxLines) continue;
       if (list.any((o) => similar(o, p))) continue;
       list.add(p);
-      if (horiz.length >= 8 && vert.length >= 8) break;
+      if (horiz.length >= maxLines && vert.length >= maxLines) break;
     }
 
     final quads = <Quad>[];

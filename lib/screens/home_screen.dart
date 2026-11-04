@@ -97,6 +97,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   onTap: () => _open(docs[i]),
                   onShare: () => _share(docs[i]),
                   onCopyText: () => copyDocumentText(context, docs[i]),
+                  onSaveToDevice: () => saveDocumentToDevice(context, docs[i]),
                   onRename: () => _rename(docs[i]),
                   onDelete: () => _delete(docs[i]),
                 ),
@@ -145,7 +146,7 @@ class _EmptyHome extends StatelessWidget {
   }
 }
 
-enum _DocAction { share, copyText, rename, delete }
+enum _DocAction { share, saveToDevice, copyText, rename, delete }
 
 class _DocumentTile extends StatelessWidget {
   const _DocumentTile({
@@ -153,6 +154,7 @@ class _DocumentTile extends StatelessWidget {
     required this.onTap,
     required this.onShare,
     required this.onCopyText,
+    required this.onSaveToDevice,
     required this.onRename,
     required this.onDelete,
   });
@@ -161,6 +163,7 @@ class _DocumentTile extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onShare;
   final VoidCallback onCopyText;
+  final VoidCallback onSaveToDevice;
   final VoidCallback onRename;
   final VoidCallback onDelete;
 
@@ -236,6 +239,7 @@ class _DocumentTile extends StatelessWidget {
                 onSelected: (a) => switch (a) {
                   _DocAction.share => onShare(),
                   _DocAction.copyText => onCopyText(),
+                  _DocAction.saveToDevice => onSaveToDevice(),
                   _DocAction.rename => onRename(),
                   _DocAction.delete => onDelete(),
                 },
@@ -245,6 +249,13 @@ class _DocumentTile extends StatelessWidget {
                     child: ListTile(
                       leading: Icon(Icons.share),
                       title: Text('Compartir'),
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: _DocAction.saveToDevice,
+                    child: ListTile(
+                      leading: Icon(Icons.save_alt),
+                      title: Text('Guardar en el dispositivo…'),
                     ),
                   ),
                   if (doc.textPath != null)

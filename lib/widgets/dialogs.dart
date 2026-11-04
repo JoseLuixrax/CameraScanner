@@ -1,6 +1,9 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../services/device_saver.dart';
 import '../services/document_repository.dart';
 import '../services/pdf_service.dart';
 
@@ -81,94 +84,146 @@ class _SourceCard extends StatelessWidget {
 }
 
 class ExportOptions {
-  const ExportOptions(this.name, this.pageSize, {this.ocr = true});
+  const ExportOptions(
+    this.name,
+    this.pageSize, {
+    this.ocr = true,
+    this.quality = PdfQuality.high,
+    this.saveToDevice = false,
+  });
 
   final String name;
   final PdfPageSize pageSize;
 
   /// Añadir capa de texto (OCR) para poder buscar y copiar el texto.
   final bool ocr;
+
+  /// Calidad de las imágenes (tamaño del archivo).
+  final PdfQuality quality;
+
+  /// Abrir además el selector del sistema para guardar una copia en una
+  /// carpeta del dispositivo.
+  final bool saveToDevice;
 }
 
-/// Diálogo con nombre del PDF, tamaño de página y OCR.
+/// Diálogo de guardado: nombre, tamaño de página, calidad, OCR y copia en
+/// una carpeta del dispositivo.
 Future<ExportOptions?> showExportDialog(
   BuildContext context, {
   required String defaultName,
   PdfPageSize initialSize = PdfPageSize.a4,
   bool initialOcr = true,
+  PdfQuality initialQuality = PdfQuality.high,
+  bool initialSaveToDevice = false,
 }) {
   final controller = TextEditingController(text: defaultName);
   var size = initialSize;
   var ocr = initialOcr;
+  var quality = initialQuality;
+  var saveToDevice = initialSaveToDevice;
   return showDialog<ExportOptions>(
     context: context,
     builder: (context) => StatefulBuilder(
-      builder: (context, setState) => AlertDialog(
-        title: const Text('Guardar PDF'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              TextField(
-                controller: controller,
-                autofocus: true,
-                decoration: const InputDecoration(
-                  labelText: 'Nombre',
-                  border: OutlineInputBorder(),
+      builder: (context, setState) {
+        final small = Theme.of(context).textTheme.bodySmall;
+        return AlertDialog(
+          title: const Text('Guardar PDF'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: controller,
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Nombre',
+                    border: OutlineInputBorder(),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              const Text('Tamaño de página'),
-              const SizedBox(height: 8),
-              SegmentedButton<PdfPageSize>(
-                segments: [
-                  for (final s in PdfPageSize.values)
-                    ButtonSegment(value: s, label: Text(s.label)),
-                ],
-                selected: {size},
-                onSelectionChanged: (v) => setState(() => size = v.first),
-                showSelectedIcon: false,
-              ),
-              if (size == PdfPageSize.fit) ...[
+                const SizedBox(height: 16),
+                const Text('Tamaño de página'),
                 const SizedBox(height: 8),
-                Text(
-                  'Cada página toma la forma del documento escaneado.',
-                  style: Theme.of(context).textTheme.bodySmall,
+                SegmentedButton<PdfPageSize>(
+                  segments: [
+                    for (final s in PdfPageSize.values)
+                      ButtonSegment(value: s, label: Text(s.label)),
+                  ],
+                  selected: {size},
+                  onSelectionChanged: (v) => setState(() => size = v.first),
+                  showSelectedIcon: false,
+                ),
+                if (size == PdfPageSize.fit) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    'Cada página toma la forma del documento escaneado.',
+                    style: small,
+                  ),
+                ],
+                const SizedBox(height: 16),
+                const Text('Calidad'),
+                const SizedBox(height: 8),
+                SegmentedButton<PdfQuality>(
+                  segments: [
+                    for (final q in PdfQuality.values)
+                      ButtonSegment(value: q, label: Text(q.label)),
+                  ],
+                  selected: {quality},
+                  onSelectionChanged: (v) => setState(() => quality = v.first),
+                  showSelectedIcon: false,
+                ),
+                const SizedBox(height: 6),
+                Text(switch (quality) {
+                  PdfQuality.high => 'Máxima nitidez.',
+                  PdfQuality.medium =>
+                    'Más ligero: ideal para correo y WhatsApp.',
+                  PdfQuality.low =>
+                    'Archivo mínimo; el texto pequeño pierde detalle.',
+                }, style: small),
+                const SizedBox(height: 8),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: ocr,
+                  onChanged: (v) => setState(() => ocr = v),
+                  title: const Text('Texto seleccionable (OCR)'),
+                  subtitle: const Text('Permite buscar y copiar el texto'),
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: saveToDevice,
+                  onChanged: (v) => setState(() => saveToDevice = v),
+                  title: const Text('Guardar también en el dispositivo'),
+                  subtitle: const Text(
+                    'Elige carpeta y nombre (Descargas, Drive…)',
+                  ),
                 ),
               ],
-              const SizedBox(height: 8),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                value: ocr,
-                onChanged: (v) => setState(() => ocr = v),
-                title: const Text('Texto seleccionable (OCR)'),
-                subtitle: const Text('Permite buscar y copiar el texto'),
-              ),
-            ],
+            ),
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            onPressed: () {
-              final name = controller.text.trim();
-              Navigator.pop(
-                context,
-                ExportOptions(
-                  name.isEmpty ? defaultName : name,
-                  size,
-                  ocr: ocr,
-                ),
-              );
-            },
-            child: const Text('Guardar'),
-          ),
-        ],
-      ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final name = controller.text.trim();
+                Navigator.pop(
+                  context,
+                  ExportOptions(
+                    name.isEmpty ? defaultName : name,
+                    size,
+                    ocr: ocr,
+                    quality: quality,
+                    saveToDevice: saveToDevice,
+                  ),
+                );
+              },
+              child: const Text('Guardar'),
+            ),
+          ],
+        );
+      },
     ),
   );
 }
@@ -255,4 +310,24 @@ Future<void> copyDocumentText(BuildContext context, SavedDocument doc) async {
   messenger.showSnackBar(
     SnackBar(content: Text('Texto copiado (${text.length} caracteres)')),
   );
+}
+
+/// Guarda [doc] en una carpeta del dispositivo con el selector del sistema.
+Future<void> saveDocumentToDevice(
+  BuildContext context,
+  SavedDocument doc,
+) async {
+  final messenger = ScaffoldMessenger.of(context);
+  try {
+    final bytes = await File(doc.pdfPath).readAsBytes();
+    final where = await DeviceSaver.savePdf(bytes, doc.fileName);
+    if (where == null) return; // cancelado
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text('Guardado en $where')));
+  } catch (e) {
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text('No se pudo guardar: $e')));
+  }
 }

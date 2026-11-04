@@ -39,6 +39,11 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
               icon: const Icon(Icons.copy_all),
             ),
           IconButton(
+            tooltip: 'Guardar en el dispositivo',
+            onPressed: () => saveDocumentToDevice(context, widget.document),
+            icon: const Icon(Icons.save_alt),
+          ),
+          IconButton(
             tooltip: 'Compartir',
             onPressed: _share,
             icon: const Icon(Icons.share),

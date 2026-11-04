@@ -8,11 +8,14 @@ import '../models/scan_page.dart';
 import '../processing/enhance.dart';
 import '../processing/geometry.dart';
 import '../processing/pipeline.dart';
+import '../services/app_prefs.dart';
+import '../services/device_saver.dart';
 import '../services/document_repository.dart';
 import '../services/image_service.dart';
 import '../services/ocr_service.dart';
 import '../services/pdf_service.dart';
 import '../widgets/dialogs.dart';
+import 'camera_screen.dart';
 import 'crop_screen.dart';
 import 'filter_screen.dart';
 import 'pdf_viewer_screen.dart';
@@ -38,15 +41,13 @@ class ScanSessionScreen extends StatefulWidget {
 class _ScanSessionScreenState extends State<ScanSessionScreen> {
   final List<ScanPage> _pages = [];
   Directory? _workDir;
-  ScanFilter _defaultFilter = ScanFilter.magicColor;
-  PdfPageSize _pageSize = PdfPageSize.a4;
+  ScanFilter _defaultFilter = AppPrefs.defaultFilter;
 
   /// Cola de renderizado: una página cada vez (limita el uso de memoria).
   Future<void> _renderQueue = Future.value();
 
   /// Cola de OCR (ML Kit trabaja en nativo; se reconoce una página cada vez).
   Future<void> _ocrQueue = Future.value();
-  bool _ocrEnabled = true;
   String? _busyMessage;
   bool _saving = false;
   int _uid = 0;
@@ -90,9 +91,7 @@ class _ScanSessionScreenState extends State<ScanSessionScreen> {
   Future<void> _capture(CaptureSource source) async {
     try {
       if (source == CaptureSource.camera) {
-        final path = await ImageService.takePhoto();
-        if (path == null) return;
-        await _importSingle(path);
+        await _captureWithCamera();
       } else {
         final paths = await ImageService.pickFromGallery();
         if (paths.isEmpty) return;
@@ -109,10 +108,36 @@ class _ScanSessionScreenState extends State<ScanSessionScreen> {
     }
   }
 
+  /// Cámara integrada con detección en vivo (o la del sistema si falla).
+  Future<void> _captureWithCamera() async {
+    final result = await Navigator.of(context).push<CameraResult>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => const CameraScreen(),
+      ),
+    );
+    if (result == null || !mounted) return;
+    if (result.useSystemCamera) {
+      final path = await ImageService.takePhoto();
+      if (path != null) await _importSingle(path);
+      return;
+    }
+    final shots = result.shots;
+    if (shots.length == 1 && !result.batch) {
+      await _importSingle(shots.first, deleteOriginal: true);
+    } else if (shots.isNotEmpty) {
+      await _importBatch(shots, deleteOriginals: true);
+    }
+    if (result.openGallery && mounted) {
+      await _capture(CaptureSource.gallery);
+    }
+  }
+
   /// Una imagen: se pasa por las pantallas de recorte y filtro.
-  Future<void> _importSingle(String path) async {
+  Future<void> _importSingle(String path, {bool deleteOriginal = false}) async {
     setState(() => _busyMessage = 'Detectando bordes…');
     final info = await ImageService.prepare(path, await _dir());
+    if (deleteOriginal) _deleteQuietly(path); // ya hay copia normalizada
     if (!mounted) return;
     setState(() => _busyMessage = null);
     final page = _newPage(info);
@@ -126,7 +151,10 @@ class _ScanSessionScreenState extends State<ScanSessionScreen> {
   }
 
   /// Varias imágenes: se recortan automáticamente; luego se pueden retocar.
-  Future<void> _importBatch(List<String> paths) async {
+  Future<void> _importBatch(
+    List<String> paths, {
+    bool deleteOriginals = false,
+  }) async {
     final dir = await _dir();
     var undetected = 0;
     for (var i = 0; i < paths.length; i++) {
@@ -134,6 +162,7 @@ class _ScanSessionScreenState extends State<ScanSessionScreen> {
       setState(() => _busyMessage = 'Procesando ${i + 1} de ${paths.length}…');
       try {
         final info = await ImageService.prepare(paths[i], dir);
+        if (deleteOriginals) _deleteQuietly(paths[i]);
         if (info.detected == null) undetected++;
         final page = _newPage(info);
         if (!mounted) return;
@@ -196,6 +225,7 @@ class _ScanSessionScreenState extends State<ScanSessionScreen> {
         ..filter = choice.filter
         ..rotation = choice.rotation;
       _defaultFilter = choice.filter;
+      AppPrefs.defaultFilter = choice.filter;
       return true;
     }
   }
@@ -313,12 +343,17 @@ class _ScanSessionScreenState extends State<ScanSessionScreen> {
       defaultName:
           'Escaneo ${now.year}-${two(now.month)}-${two(now.day)} '
           '${two(now.hour)}.${two(now.minute)}',
-      initialSize: _pageSize,
-      initialOcr: _ocrEnabled,
+      initialSize: AppPrefs.pageSize,
+      initialOcr: AppPrefs.ocr,
+      initialQuality: AppPrefs.quality,
+      initialSaveToDevice: AppPrefs.saveToDevice,
     );
     if (options == null || !mounted) return;
-    _pageSize = options.pageSize;
-    _ocrEnabled = options.ocr;
+    // Se recuerdan las opciones para la próxima vez.
+    AppPrefs.pageSize = options.pageSize;
+    AppPrefs.ocr = options.ocr;
+    AppPrefs.quality = options.quality;
+    AppPrefs.saveToDevice = options.saveToDevice;
     setState(() {
       _saving = true;
       _busyMessage = 'Terminando páginas…';
@@ -361,6 +396,7 @@ class _ScanSessionScreenState extends State<ScanSessionScreen> {
         inputs,
         pageSize: options.pageSize,
         title: options.name,
+        quality: options.quality,
       );
       final thumb = await ImageService.thumbnail(_pages.first.outputPath!);
       final doc = await DocumentRepository.instance.save(
@@ -371,6 +407,28 @@ class _ScanSessionScreenState extends State<ScanSessionScreen> {
         text: text.isEmpty ? null : text,
       );
       if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      if (options.saveToDevice) {
+        setState(() => _busyMessage = 'Elige dónde guardar el PDF…');
+        try {
+          final where = await DeviceSaver.savePdf(bytes, doc.fileName);
+          if (where != null) {
+            messenger.showSnackBar(
+              SnackBar(content: Text('PDF guardado en $where')),
+            );
+          }
+        } catch (e) {
+          messenger.showSnackBar(
+            SnackBar(
+              content: Text(
+                'El PDF está en la app, pero no se pudo copiar al '
+                'dispositivo: $e',
+              ),
+            ),
+          );
+        }
+        if (!mounted) return;
+      }
       // Sustituye la sesión por el visor del PDF recién creado.
       _pages.clear();
       unawaited(

@@ -7,6 +7,8 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 import '../models/ocr_line.dart';
+import '../processing/codec.dart';
+import '../processing/image_ops.dart';
 
 /// Tamaño de página del PDF.
 enum PdfPageSize {
@@ -19,6 +21,29 @@ enum PdfPageSize {
   const PdfPageSize(this.label);
 
   final String label;
+}
+
+/// Calidad de las imágenes dentro del PDF (tamaño del archivo).
+enum PdfQuality {
+  /// Imágenes tal cual (hasta 3000 px, JPEG 88): máxima nitidez.
+  high('Alta', null, null),
+
+  /// ~200 ppp en A4: buen equilibrio para correo y WhatsApp.
+  medium('Media', 2000, 80),
+
+  /// ~150 ppp en A4: archivos muy ligeros.
+  low('Baja', 1400, 70);
+
+  const PdfQuality(this.label, this.maxSide, this.jpegQuality);
+
+  final String label;
+
+  /// Lado mayor máximo de cada página (null = sin cambios).
+  final int? maxSide;
+  final int? jpegQuality;
+
+  static PdfQuality fromName(String? n) =>
+      values.firstWhere((v) => v.name == n, orElse: () => high);
 }
 
 /// Página a incluir en el PDF (JPEG ya procesado + texto reconocido).
@@ -48,7 +73,10 @@ class PdfService {
     List<PdfPageInput> pages, {
     required PdfPageSize pageSize,
     required String title,
-  }) => Isolate.run(() => buildPdf(pages, pageSize: pageSize, title: title));
+    PdfQuality quality = PdfQuality.high,
+  }) => Isolate.run(
+    () => buildPdf(pages, pageSize: pageSize, title: title, quality: quality),
+  );
 }
 
 PdfPageFormat _formatFor(PdfPageInput p, PdfPageSize size) {
@@ -76,6 +104,7 @@ Future<Uint8List> buildPdf(
   required String title,
   bool compress = true,
   bool debugVisibleText = false,
+  PdfQuality quality = PdfQuality.high,
 }) {
   final doc = pw.Document(
     title: title,
@@ -96,7 +125,7 @@ Future<Uint8List> buildPdf(
   );
 
   for (final p in pages) {
-    final image = pw.MemoryImage(File(p.path).readAsBytesSync());
+    final image = pw.MemoryImage(_pageImage(p.path, quality));
     final format = _formatFor(p, pageSize);
     // Imagen encajada (contain) y centrada en la página.
     final scale = math.min(format.width / p.width, format.height / p.height);
@@ -148,6 +177,18 @@ Future<Uint8List> buildPdf(
     );
   }
   return doc.save();
+}
+
+/// JPEG de la página con la calidad pedida. En calidad alta se incrusta el
+/// archivo original sin recomprimir; en media/baja se reduce y recomprime
+/// (la capa de texto usa coordenadas normalizadas, así que sigue alineada).
+Uint8List _pageImage(String path, PdfQuality quality) {
+  final bytes = File(path).readAsBytesSync();
+  final maxSide = quality.maxSide;
+  if (maxSide == null) return bytes;
+  final rgb = decodeToRgb(bytes, maxSide: maxSide);
+  if (rgb == null) return bytes;
+  return encodeJpeg(limitSize(rgb, maxSide), quality: quality.jpegQuality!);
 }
 
 /// Caracteres Unicode que en WinAnsiEncoding ocupan los códigos 0x80–0x9F.

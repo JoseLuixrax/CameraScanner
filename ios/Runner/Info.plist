@@ -10,6 +10,8 @@
 	<string>Escáner PDF</string>
 	<key>NSCameraUsageDescription</key>
 	<string>La cámara se usa para fotografiar los documentos que quieres escanear.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>La app no graba audio; este permiso lo exige el componente de cámara.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Se accede a tus fotos para convertir imágenes de documentos en PDF.</string>
 	<key>CFBundleExecutable</key>
