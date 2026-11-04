@@ -58,13 +58,30 @@ jobs:
           keyPassword=$KEY_PASSWORD
           EOF
 
+      # Versión: en un tag vX.Y.Z se usa X.Y.Z; si no, la de pubspec.yaml.
+      # El número de build (versionCode) es el nº de ejecución de CI: siempre
+      # crece, así Android permite instalar cada versión encima de la anterior
+      # (si se firma con la misma clave, ver README → "Firmar el APK").
+      - name: Calcular versión
+        id: version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            NAME="${GITHUB_REF_NAME#v}"
+          else
+            NAME=$(grep '^version:' pubspec.yaml | awk '{print $2}' | cut -d+ -f1)
+          fi
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "number=${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+          echo "Versión $NAME (build ${{ github.run_number }})"
+
       - name: Compilar APK
-        run: flutter build apk --release
+        run: >
+          flutter build apk --release
+          --build-name=${{ steps.version.outputs.name }}
+          --build-number=${{ steps.version.outputs.number }}
 
       - name: Renombrar APK
-        run: |
-          VERSION=$(grep '^version:' pubspec.yaml | awk '{print $2}' | cut -d+ -f1)
-          cp build/app/outputs/flutter-apk/app-release.apk "escaner-pdf-${VERSION}.apk"
+        run: cp build/app/outputs/flutter-apk/app-release.apk "escaner-pdf-${{ steps.version.outputs.name }}.apk"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -76,4 +93,16 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
+          name: Escáner PDF ${{ steps.version.outputs.name }}
           files: escaner-pdf-*.apk
+          make_latest: true
+          generate_release_notes: true
+          body: |
+            ## Instalación (Android)
+
+            1. Descarga **escaner-pdf-${{ steps.version.outputs.name }}.apk** (abajo, en *Assets*).
+            2. Ábrelo en el móvil y permite "instalar apps desconocidas" si lo pide.
+            3. Si tenías una versión firmada con otra clave, desinstálala antes.
+
+            Funciona sin conexión: detección de bordes, mejora de imagen y OCR
+            se hacen en el propio móvil.

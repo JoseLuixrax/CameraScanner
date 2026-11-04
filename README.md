@@ -31,8 +31,19 @@ que analiza el código, ejecuta los tests y compila el APK:
 2. Abajo, en **Artifacts**, descarga `escaner-pdf-apk` (es un .zip con el `.apk`).
 3. Pásalo al móvil y ábrelo (Android pedirá permitir "instalar apps desconocidas").
 
-Si creas un tag `v1.0.0` (`git tag v1.0.0 && git push origin v1.0.0`), el APK se
-adjunta además a una **Release** de GitHub.
+### Releases
+
+Las versiones publicadas están en **Releases** (columna derecha del repositorio), con el
+APK listo para descargar. Para publicar una nueva basta con crear un tag `vX.Y.Z`:
+
+```bash
+git tag -a v1.1.0 -m "Escáner PDF 1.1.0"
+git push origin v1.1.0
+```
+
+El workflow compila el APK con esa versión (`versionName` = `1.1.0`, `versionCode` = nº de
+ejecución de CI, que siempre crece) y crea la Release con el APK adjunto y las notas de
+cambios generadas a partir de los commits.
 
 > ⚠️ Sin configurar una clave propia (sección 4), cada build se firma con una clave
 > de depuración distinta, así que para actualizar hay que desinstalar la versión
