@@ -34,16 +34,22 @@ que analiza el código, ejecuta los tests y compila el APK:
 ### Releases
 
 Las versiones publicadas están en **Releases** (columna derecha del repositorio), con el
-APK listo para descargar. Para publicar una nueva basta con crear un tag `vX.Y.Z`:
+APK listo para descargar. Para publicar una nueva:
+
+**Desde GitHub (también desde el móvil):** pestaña **Actions → Build APK → Run workflow**,
+elige la rama, escribe la versión (p. ej. `1.0.0`) en *Versión a publicar como Release* y
+pulsa **Run workflow**. GitHub crea el tag `v1.0.0`, compila el APK y publica la Release.
+
+**Desde la terminal:**
 
 ```bash
 git tag -a v1.1.0 -m "Escáner PDF 1.1.0"
 git push origin v1.1.0
 ```
 
-El workflow compila el APK con esa versión (`versionName` = `1.1.0`, `versionCode` = nº de
-ejecución de CI, que siempre crece) y crea la Release con el APK adjunto y las notas de
-cambios generadas a partir de los commits.
+En ambos casos el APK lleva esa versión (`versionName` = `1.1.0`, `versionCode` = nº de
+ejecución de CI, que siempre crece) y la Release incluye notas de instalación y los cambios
+generados a partir de los commits.
 
 > ⚠️ Sin configurar una clave propia (sección 4), cada build se firma con una clave
 > de depuración distinta, así que para actualizar hay que desinstalar la versión
