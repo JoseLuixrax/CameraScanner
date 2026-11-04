@@ -7,10 +7,14 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
-// Firma de release opcional: si existe android/key.properties se usa esa clave
-// (necesaria para publicar en Play Store y para que las actualizaciones del APK
-// se instalen encima de la versión anterior). Si no, se firma con la clave de
-// depuración. Ver README → "Firmar el APK".
+// Firma de release (ver README → "Firma del APK"):
+//  * Por defecto, la clave fija del repositorio (app/escaner-pdf.keystore):
+//    todas las builds, locales o de CI, se firman igual y cada versión se
+//    instala encima de la anterior sin perder los documentos. Vale para uso
+//    personal/interno; al ser un repo público, no es una clave secreta.
+//  * Si existe android/key.properties (clave privada en local, o creada en CI
+//    desde los secrets ANDROID_KEYSTORE_*), se usa esa en su lugar. Necesario
+//    antes de publicar en Google Play.
 val keystoreProperties = Properties()
 val keystorePropertiesFile = rootProject.file("key.properties")
 if (keystorePropertiesFile.exists()) {
@@ -48,17 +52,18 @@ android {
                 keyPassword = keystoreProperties["keyPassword"] as String
                 storeFile = file(keystoreProperties["storeFile"] as String)
                 storePassword = keystoreProperties["storePassword"] as String
+            } else {
+                storeFile = file("escaner-pdf.keystore")
+                storePassword = "escanerpdf"
+                keyAlias = "escaner"
+                keyPassword = "escanerpdf"
             }
         }
     }
 
     buildTypes {
         release {
-            signingConfig = if (keystorePropertiesFile.exists()) {
-                signingConfigs.getByName("release")
-            } else {
-                signingConfigs.getByName("debug")
-            }
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 }

@@ -47,8 +47,8 @@ jobs:
       - name: Tests
         run: flutter test
 
-      # Firma opcional con tu propia clave (ver README → "Firmar el APK").
-      # Sin estos secrets se firma con una clave de depuración temporal.
+      # Clave privada opcional (ver README → "Firma del APK").
+      # Sin estos secrets se usa la clave fija del repo (android/app/escaner-pdf.keystore).
       - name: Configurar firma de release
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -68,7 +68,7 @@ jobs:
       # Versión: en un tag vX.Y.Z se usa X.Y.Z; si no, la de pubspec.yaml.
       # El número de build (versionCode) es el nº de ejecución de CI: siempre
       # crece, así Android permite instalar cada versión encima de la anterior
-      # (si se firma con la misma clave, ver README → "Firmar el APK").
+      # (todas las builds se firman con la misma clave, ver README → "Firma del APK").
       - name: Calcular versión
         id: version
         env:
@@ -100,7 +100,11 @@ jobs:
           --build-number=${{ steps.version.outputs.number }}
 
       - name: Renombrar APK
-        run: cp build/app/outputs/flutter-apk/app-release.apk "escaner-pdf-${{ steps.version.outputs.name }}.apk"
+        run: |
+          cp build/app/outputs/flutter-apk/app-release.apk "escaner-pdf-${{ steps.version.outputs.name }}.apk"
+          # Mismo archivo con nombre fijo para las releases: así
+          # .../releases/latest/download/EscanerPDF.apk apunta siempre a la última.
+          cp build/app/outputs/flutter-apk/app-release.apk EscanerPDF.apk
 
       - uses: actions/upload-artifact@v4
         with:
@@ -115,15 +119,21 @@ jobs:
           tag_name: v${{ steps.version.outputs.name }}
           target_commitish: ${{ github.sha }}
           name: Escáner PDF ${{ steps.version.outputs.name }}
-          files: escaner-pdf-*.apk
+          files: EscanerPDF.apk
           make_latest: true
           generate_release_notes: true
           body: |
             ## Instalación (Android)
 
-            1. Descarga **escaner-pdf-${{ steps.version.outputs.name }}.apk** (abajo, en *Assets*).
-            2. Ábrelo en el móvil y permite "instalar apps desconocidas" si lo pide.
-            3. Si tenías una versión firmada con otra clave, desinstálala antes.
+            1. Descarga **EscanerPDF.apk** (abajo, en *Assets*) desde el móvil.
+            2. Ábrelo y permite "instalar apps desconocidas" si lo pide.
+
+            Se instala encima de versiones anteriores sin perder los documentos.
+            (Sólo si tienes una build antigua anterior a la 1.0.0, desinstálala
+            una vez antes: estaba firmada con otra clave.)
+
+            Enlace fijo a la última versión:
+            https://github.com/${{ github.repository }}/releases/latest/download/EscanerPDF.apk
 
             Funciona sin conexión: detección de bordes, mejora de imagen y OCR
             se hacen en el propio móvil.

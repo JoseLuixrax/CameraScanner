@@ -59,9 +59,9 @@ En ambos casos el APK lleva esa versión (`versionName` = `1.1.0`, `versionCode`
 ejecución de CI, que siempre crece) y la Release incluye notas de instalación y los cambios
 generados a partir de los commits.
 
-> ⚠️ Sin configurar una clave propia (sección 4), cada build se firma con una clave
-> de depuración distinta, así que para actualizar hay que desinstalar la versión
-> anterior. Con la clave propia las actualizaciones se instalan encima.
+Todas las builds se firman con la misma clave (sección 4), así que cada versión nueva
+**se instala encima de la anterior sin perder los documentos**. Enlace fijo a la última:
+https://github.com/JoseLuixrax/CameraScanner/releases/latest/download/EscanerPDF.apk
 
 ## 2. Compilar en local
 
@@ -121,9 +121,20 @@ de iOS…) y copiar entero desde la app con **Copiar texto** (menú ⋮ de cada 
 Si eliges **varias imágenes** de la galería, se recortan y mejoran automáticamente en
 lote; después puedes retocar cualquier página.
 
-## 4. Firmar el APK con tu propia clave
+## 4. Firma del APK
 
-Necesario para publicar en Google Play y para que las actualizaciones se instalen encima.
+Por defecto el APK se firma con una **clave fija incluida en el repositorio**
+(`android/app/escaner-pdf.keystore`, alias `escaner`), igual en local que en CI. Así
+cada versión se instala encima de la anterior sin perder los PDFs guardados.
+
+> ⚠️ Al estar en un repositorio público, esa clave **no es secreta**: sirve para uso
+> personal o interno (instalando los APK desde las Releases de este repo), pero no
+> para Google Play. Cualquiera podría firmar un APK que Android aceptaría como
+> actualización, así que instala sólo los APK de las Releases oficiales.
+
+Para publicar en Google Play (o si quieres una clave privada), crea la tuya: si existe
+`android/key.properties` se usa en lugar de la clave fija. Cambiar de clave obliga a
+desinstalar una vez la app.
 
 ```bash
 # 1) Crear la clave (una sola vez, guárdala bien: si se pierde no podrás actualizar la app)
@@ -131,12 +142,7 @@ keytool -genkey -v -keystore upload-keystore.jks -keyalg RSA -keysize 2048 \
         -validity 10000 -alias upload
 
 # 2a) Build local: crea android/key.properties (está en .gitignore, NO se sube)
-cat > android/key.properties <<EOF
-storeFile=/ruta/absoluta/upload-keystore.jks
-storePassword=TU_PASSWORD
-keyAlias=upload
-keyPassword=TU_PASSWORD
-EOF
+#     con storeFile, storePassword, keyAlias y keyPassword.
 
 # 2b) GitHub Actions: añade estos secrets en Settings → Secrets and variables → Actions
 base64 -w0 upload-keystore.jks   # → ANDROID_KEYSTORE_BASE64

@@ -12,3 +12,6 @@ GeneratedPluginRegistrant.java
 key.properties
 **/*.keystore
 **/*.jks
+# Excepción: clave fija de firma para uso personal/interno, subida a propósito
+# para que todas las builds se actualicen encima (ver app/build.gradle.kts).
+!app/escaner-pdf.keystore
